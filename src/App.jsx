@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Link,
   Route,
@@ -18,7 +18,7 @@ import {
   Compass,
   Gamepad2,
   Heart,
-  Home,
+  Home as HomeIcon,
   ImagePlus,
   LoaderCircle,
   MessageCircle,
@@ -31,6 +31,8 @@ import {
   Sun,
   ThumbsUp,
   TrendingUp,
+  History,
+  Share2,
   Upload,
   Users,
   X,
@@ -63,12 +65,22 @@ const GAMES = [
   "Other",
 ];
 const defaultPrefs = {
-  theme: "soft",
+  theme: "auto",
   layout: "list",
   richFeed: false,
   sort: "newest",
   animations: true,
 };
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+// "auto" follows the device: evening mode for dark-mode users, soft neutrals otherwise.
+function resolveTheme(theme, systemDark) {
+  if (theme !== "auto") return theme;
+  return systemDark ? "dark" : "soft";
+}
+function prefersDark() {
+  return window.matchMedia?.(DARK_QUERY).matches ?? false;
+}
 
 function readPrefs() {
   try {
@@ -165,24 +177,27 @@ function Header({ user, prefs, setPrefs }) {
   const update = (key, value) => setPrefs((p) => ({ ...p, [key]: value }));
   return (
     <header className="topbar">
-      <Link to="/" className="brand" aria-label="HobbyHub home">
+      <Link to="/" className="brand" aria-label="Hubpalouza home">
         <span className="brand-mark">
           <Gamepad2 size={22} />
         </span>
         <span>
-          hobby<span>hub</span>
-          <small>your games, your people</small>
+          <span>Hubpalouza</span>
+          <small>gamers chatting about games</small>
         </span>
       </Link>
       <nav className="main-nav">
         <Link to="/">
-          <Home size={16} /> Explore
+          <HomeIcon size={16} /> Explore
         </Link>
         <Link to="/?view=trending">
           <TrendingUp size={16} /> Trending
         </Link>
         <Link to="/?view=saved">
           <Bookmark size={16} /> Saved
+        </Link>
+        <Link to="/?view=recent">
+          <History size={16} /> Recently viewed
         </Link>
       </nav>
       <div className="header-actions">
@@ -217,12 +232,19 @@ function Header({ user, prefs, setPrefs }) {
                   value={prefs.theme}
                   onChange={(e) => update("theme", e.target.value)}
                 >
+                  <option value="auto">Automatic (match my device)</option>
                   <option value="soft">Soft neutrals</option>
                   <option value="lavender">Lavender mist</option>
                   <option value="sage">Sage garden</option>
                   <option value="dark">Evening mode</option>
                 </select>
               </label>
+              {prefs.theme === "auto" && (
+                <p className="muted tiny setting-hint">
+                  Evening mode when your device uses dark mode, soft neutrals
+                  when it uses light mode.
+                </p>
+              )}
               <label>
                 Feed layout
                 <select
@@ -289,7 +311,7 @@ function PostCard({ post, prefs, saved, toggleSaved, compact = false }) {
     const { data, error } = await supabase.rpc("increment_post_upvotes", {
       post_id_input: post.id,
     });
-    if (error) setMessage("Could not save your upvote.");
+    if (error) setMessage("Error: Could not save your upvote.");
     else setVotes(typeof data === "number" ? data : votes + 1);
     setVoting(false);
   }
@@ -301,7 +323,7 @@ function PostCard({ post, prefs, saved, toggleSaved, compact = false }) {
         <div className="post-meta-line">
           <Badge type={post.post_type}>{post.post_type || "Discussion"}</Badge>
           <span className="game-label">
-            <Gamepad2 size={13} /> {post.game_title || "General Gaming"}
+            <Gamepad2 size={13} /> {post.game_title || "General Game Talk"}
           </span>
         </div>
         <Link to={`/posts/${post.id}`} className="post-title-link">
@@ -403,6 +425,18 @@ function Home({ user, prefs, savedIds, toggleSaved }) {
         savedIds.length ? savedIds : ["00000000-0000-0000-0000-000000000000"],
       );
     }
+    if (view === "recent") {
+      let recentIds = [];
+      try {
+        recentIds = JSON.parse(localStorage.getItem("hobbyhub-recent") || "[]");
+      } catch {
+        recentIds = [];
+      }
+      query = query.in(
+        "id",
+        recentIds.length ? recentIds : ["00000000-0000-0000-0000-000000000000"],
+      );
+    }
     if (view === "trending")
       query = query
         .order("upvotes", { ascending: false })
@@ -419,7 +453,23 @@ function Home({ user, prefs, savedIds, toggleSaved }) {
       query = query.order("created_at", { ascending: prefs.sort === "oldest" });
     const { data, error: fetchError } = await query.limit(100);
     if (fetchError) setError(fetchError.message);
-    else setPosts(data || []);
+    else {
+      let loaded = data || [];
+      if (view === "recent") {
+        let recentIds = [];
+        try {
+          recentIds = JSON.parse(
+            localStorage.getItem("hobbyhub-recent") || "[]",
+          );
+        } catch {
+          recentIds = [];
+        }
+        loaded = [...loaded].sort(
+          (a, b) => recentIds.indexOf(a.id) - recentIds.indexOf(b.id),
+        );
+      }
+      setPosts(loaded);
+    }
     setLoading(false);
   }, [selectedGame, view, savedIds, prefs.sort]);
 
@@ -467,17 +517,16 @@ function Home({ user, prefs, savedIds, toggleSaved }) {
       <section className="welcome-panel">
         <div className="welcome-copy">
           <div className="eyebrow">
-            <Sparkles size={14} /> A little corner of the internet, just for
-            gamers
+            <Sparkles size={14} /> Just a little corner of the internet world
           </div>
           <h1>
-            Your games.
+            Gamers around the world
             <br />
-            <span>Your people.</span>
+            <span>ready to talk to</span>
           </h1>
           <p>
             Share what you're playing, ask questions, find your next favorite,
-            and connect with people who love games as much as you do.
+            and connect with cool gamers
           </p>
           <div className="welcome-actions">
             <Link to="/create" className="button button-primary">
@@ -502,7 +551,7 @@ function Home({ user, prefs, savedIds, toggleSaved }) {
           <div className="game-tile tile-small tile-sage">
             <MessageCircle size={23} />
           </div>
-          <div className="art-caption">good games, good company</div>
+          <div className="art-caption">good games, cool company</div>
         </div>
         <div className="welcome-decoration" />
       </section>
@@ -510,8 +559,8 @@ function Home({ user, prefs, savedIds, toggleSaved }) {
       <section className="community-strip">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">Find your people</span>
-            <h2>What are we playing?</h2>
+            <span className="eyebrow">Look for your people</span>
+            <h2>Where are we landing?</h2>
           </div>
           <span className="muted small">
             Pick a game to explore its conversations
@@ -593,21 +642,27 @@ function Home({ user, prefs, savedIds, toggleSaved }) {
                 ? "Kept close"
                 : view === "trending"
                   ? "Community favorites"
-                  : "The community board"}
+                  : view === "recent"
+                    ? "Pick up where you left off"
+                    : "The community board"}
             </span>
             <h2>
               {view === "saved"
                 ? "Saved posts"
                 : view === "trending"
                   ? "Trending discussions"
-                  : selectedGame === "All games"
-                    ? "The conversation is open"
-                    : selectedGame}
+                  : view === "recent"
+                    ? "Recently viewed"
+                    : selectedGame === "All games"
+                      ? "The conversation is open"
+                      : selectedGame}
             </h2>
             <p className="muted">
               {view === "saved"
                 ? "Conversations you want to come back to."
-                : "Every game, every player, one welcoming space."}
+                : view === "recent"
+                  ? "Your latest opened discussions, saved in this browser."
+                  : "Trending games ready to be talked about"}
             </p>
           </div>
           <Link to="/create" className="button button-outline">
@@ -682,14 +737,18 @@ function Home({ user, prefs, savedIds, toggleSaved }) {
             <h3>
               {view === "saved"
                 ? "Nothing saved yet"
-                : search || type !== "All types"
-                  ? "No conversations found"
-                  : "Be the first to start a conversation"}
+                : view === "recent"
+                  ? "No recently viewed posts"
+                  : search || type !== "All types"
+                    ? "No conversations found"
+                    : "Be the first to start a conversation"}
             </h3>
             <p>
               {view === "saved"
                 ? "Bookmark a post and it will be waiting here."
-                : "Every community starts with one post. Share what is on your mind."}
+                : view === "recent"
+                  ? "Open a discussion and it will appear here for easy access."
+                  : "Every community starts with one post. Share what is on your mind."}
             </p>
             <Link to="/create" className="button button-primary">
               <Plus size={16} /> Create a post
@@ -723,6 +782,62 @@ function PostForm({ initial, onSubmit, submitting, submitLabel }) {
     setImagePreview(url);
     return () => URL.revokeObjectURL(url);
   }, [imageFile]);
+  const draftKey = "hobbyhub-post-draft";
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  useEffect(() => {
+    if (initial) return;
+    try {
+      const draft = JSON.parse(localStorage.getItem(draftKey) || "null");
+      if (
+        draft &&
+        (draft.title || draft.content || draft.imageUrl || draft.videoUrl)
+      ) {
+        setTitle(draft.title || "");
+        setContent(draft.content || "");
+        setGame(draft.game || "General Gaming");
+        setCustomGame(draft.customGame || "");
+        setType(draft.type || "Discussion");
+        setImageUrl(draft.imageUrl || "");
+        setVideoUrl(draft.videoUrl || "");
+        setReferenceId(draft.referenceId || "");
+        setImagePreview(draft.imageUrl || "");
+        setDraftRestored(true);
+      }
+    } catch {
+      localStorage.removeItem(draftKey);
+    }
+    setDraftReady(true);
+    // Restore only once when the create form first mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (initial || !draftReady) return;
+    localStorage.setItem(
+      draftKey,
+      JSON.stringify({
+        title,
+        content,
+        game,
+        customGame,
+        type,
+        imageUrl,
+        videoUrl,
+        referenceId,
+      }),
+    );
+  }, [
+    initial,
+    draftReady,
+    title,
+    content,
+    game,
+    customGame,
+    type,
+    imageUrl,
+    videoUrl,
+    referenceId,
+  ]);
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -778,6 +893,31 @@ function PostForm({ initial, onSubmit, submitting, submitLabel }) {
   }
   return (
     <form className="post-form" onSubmit={handleSubmit}>
+      {draftRestored && !initial && (
+        <div className="draft-notice">
+          <span>Your unsent draft was restored.</span>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              localStorage.removeItem(draftKey);
+              setTitle("");
+              setContent("");
+              setGame("General Gaming");
+              setCustomGame("");
+              setType("Discussion");
+              setImageUrl("");
+              setVideoUrl("");
+              setReferenceId("");
+              setImageFile(null);
+              setImagePreview("");
+              setDraftRestored(false);
+            }}
+          >
+            Discard draft
+          </button>
+        </div>
+      )}
       <label className="field-label">
         Post title <span>Required</span>
         <input
@@ -902,7 +1042,7 @@ function PostForm({ initial, onSubmit, submitting, submitLabel }) {
       {error && <div className="form-error">{error}</div>}
       <div className="form-footer">
         <p>
-          <span className="privacy-dot" /> Be kind. Keep it welcoming.
+          <span className="privacy-dot" /> Be respectable, Be kind, Keep it welcoming.
         </p>
         <div>
           <Link to="/" className="button button-quiet">
@@ -935,7 +1075,7 @@ function CreatePost({ user }) {
   async function submit(values, setError) {
     if (!supabase || !user)
       return setError(
-        "Supabase is not connected yet. Follow the setup steps in README.md.",
+        "Supabase is not connected yet. Whoops",
       );
     setSubmitting(true);
     const { data, error } = await supabase
@@ -950,6 +1090,7 @@ function CreatePost({ user }) {
       .single();
     setSubmitting(false);
     if (error) return setError(error.message);
+    localStorage.removeItem("hobbyhub-post-draft");
     navigate(`/posts/${data.id}`);
   }
   return (
@@ -958,9 +1099,9 @@ function CreatePost({ user }) {
         <ArrowLeft size={16} /> Back to the community
       </Link>
       <div className="page-intro">
-        <span className="eyebrow">Your voice belongs here</span>
+        <span className="eyebrow">Let your opinions out over your games</span>
         <h1>Start a discussion</h1>
-        <p>Share a question, an idea, or something you love about a game.</p>
+        <p>Share a question, an idea, or something gamerish you love.</p>
       </div>
       <div className="form-card">
         <PostForm
@@ -995,7 +1136,7 @@ function EditPost({ user }) {
     }
     if (supabase && user) load();
     else {
-      setError("Supabase is not connected.");
+      setError("Supabase is not connected. Oopsy");
       setLoading(false);
     }
   }, [id, user]);
@@ -1018,7 +1159,7 @@ function EditPost({ user }) {
       <div className="page-intro">
         <span className="eyebrow">Make it yours</span>
         <h1>Edit your post</h1>
-        <p>Update the details of your conversation.</p>
+        <p>Update the details of your input to the conversation.</p>
       </div>
       {loading ? (
         <Loading />
@@ -1055,6 +1196,7 @@ function PostDetails({ user, savedIds, toggleSaved }) {
     () => localStorage.getItem("hobbyhub-display-name") || "",
   );
   const [nameEditing, setNameEditing] = useState(false);
+  const [shareMessage, setShareMessage] = useState("");
   const load = useCallback(async () => {
     if (!supabase) {
       setLoading(false);
@@ -1093,7 +1235,37 @@ function PostDetails({ user, savedIds, toggleSaved }) {
   }, [id]);
   useEffect(() => {
     load();
-  }, [load]);
+    try {
+      const old = JSON.parse(localStorage.getItem("hobbyhub-recent") || "[]");
+      localStorage.setItem(
+        "hobbyhub-recent",
+        JSON.stringify([id, ...old.filter((item) => item !== id)].slice(0, 20)),
+      );
+    } catch {
+      localStorage.setItem("hobbyhub-recent", JSON.stringify([id]));
+    }
+  }, [load, id]);
+  async function sharePost() {
+    const url = window.location.href;
+    try {
+      if (navigator.share) await navigator.share({ title: post.title, url });
+      else {
+        await navigator.clipboard.writeText(url);
+        setShareMessage("Link copied");
+        window.setTimeout(() => setShareMessage(""), 2200);
+      }
+    } catch (shareError) {
+      if (shareError?.name !== "AbortError") {
+        try {
+          await navigator.clipboard.writeText(url);
+          setShareMessage("Link copied");
+          window.setTimeout(() => setShareMessage(""), 2200);
+        } catch {
+          setShareMessage("Copy this page URL from your browser address bar.");
+        }
+      }
+    }
+  }
   async function addComment(e) {
     e.preventDefault();
     setCommentError("");
@@ -1133,7 +1305,7 @@ function PostDetails({ user, savedIds, toggleSaved }) {
   async function deletePost() {
     if (
       !window.confirm(
-        "Delete this post and its comments? This cannot be undone.",
+        "Delete this post and its comments? This CANNOT be undone.",
       )
     )
       return;
@@ -1299,6 +1471,14 @@ function PostDetails({ user, savedIds, toggleSaved }) {
             <Bookmark size={16} />{" "}
             {savedIds.includes(post.id) ? "Saved" : "Save for later"}
           </button>
+          <button className="button button-outline" onClick={sharePost}>
+            <Share2 size={16} /> Share
+          </button>
+          {shareMessage && (
+            <span className="tiny muted" role="status">
+              {shareMessage}
+            </span>
+          )}
           <span className="detail-action-spacer" />
           <span className="muted small">
             <MessageCircle size={15} /> {comments.length} replies
@@ -1421,7 +1601,7 @@ function NotFound() {
         <h1>That page wandered off.</h1>
         <p>The page may have moved or no longer exists.</p>
         <Link className="button button-primary" to="/">
-          Return to HobbyHub
+          Return to Hubpalouza
         </Link>
       </div>
     </main>
@@ -1430,6 +1610,7 @@ function NotFound() {
 
 export default function App() {
   const [prefs, setPrefsState] = useState(readPrefs);
+  const [systemDark, setSystemDark] = useState(prefersDark);
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [savedIds, setSavedIds] = useState(() => {
@@ -1483,9 +1664,16 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    document.documentElement.dataset.theme = prefs.theme;
+    const media = window.matchMedia?.(DARK_QUERY);
+    if (!media) return;
+    const onChange = (e) => setSystemDark(e.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolveTheme(prefs.theme, systemDark);
     document.documentElement.dataset.motion = prefs.animations ? "on" : "off";
-  }, [prefs]);
+  }, [prefs, systemDark]);
   return (
     <div className="app-shell">
       <Header user={user} prefs={prefs} setPrefs={setPrefs} />
@@ -1523,10 +1711,10 @@ export default function App() {
       )}
       <footer className="site-footer">
         <Link to="/" className="footer-brand">
-          <Gamepad2 size={17} /> HobbyHub
+          <Gamepad2 size={17} /> Hubpalouza
         </Link>
-        <span>A softer corner of the gaming internet.</span>
-        <span>Made for every kind of player.</span>
+        <span>Created & Designed by Scarlet Ceballos</span>
+        <span>WEB-102 Capstone</span>
       </footer>
     </div>
   );
