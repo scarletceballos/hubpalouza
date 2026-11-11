@@ -78,7 +78,8 @@ GIF created with [N-Studio](https://getkap.co/) for Windows
 
 ## Notes
 
-Describe any challenges encountered while building the app.
+- Managing relationships between posts, comments, and upvotes introduced complexity when implementing CRUD operations, dynamic post detail pages, and consistent data updates across the discussion feed.
+- Implementing persistent user-facing features, including automatic draft recovery, saved posts, and recently viewed history, required coordinating React state with browser local storage while accounting for page navigation, data consistency, and user experience.
 
 ## License
 
